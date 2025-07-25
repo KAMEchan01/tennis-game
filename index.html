@@ -145,6 +145,12 @@
                 active: false,
                 timer: 0,
                 particles: []
+            },
+            audio: {
+                bgm: null,
+                hitSound: null,
+                scoreSound: null,
+                fireballSound: null
             }
         };
         
@@ -156,6 +162,67 @@
             game.keys[e.key] = false;
         });
         
+        function initAudio() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            function createTone(frequency, duration, type = 'sine') {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+                oscillator.type = type;
+                
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + duration);
+            }
+            
+            function createBGM() {
+                const bgmLoop = () => {
+                    if (!game.gameStarted) return;
+                    
+                    const notes = [220, 246.94, 277.18, 293.66, 329.63, 369.99, 415.30, 466.16];
+                    const rhythm = [0.5, 0.25, 0.25, 0.5, 0.25, 0.25, 0.5, 0.5];
+                    
+                    let time = 0;
+                    notes.forEach((note, i) => {
+                        setTimeout(() => {
+                            if (game.gameStarted) {
+                                createTone(note, rhythm[i] * 0.3, 'square');
+                            }
+                        }, time * 1000);
+                        time += rhythm[i];
+                    });
+                    
+                    if (game.gameStarted) {
+                        setTimeout(bgmLoop, time * 1000);
+                    }
+                };
+                return bgmLoop;
+            }
+            
+            game.audio.bgm = createBGM();
+            
+            game.audio.hitSound = () => createTone(800, 0.1, 'square');
+            game.audio.scoreSound = () => {
+                createTone(523.25, 0.2, 'sine');
+                setTimeout(() => createTone(659.25, 0.2, 'sine'), 100);
+                setTimeout(() => createTone(783.99, 0.3, 'sine'), 200);
+            };
+            game.audio.fireballSound = () => {
+                for (let i = 0; i < 5; i++) {
+                    setTimeout(() => {
+                        createTone(200 + Math.random() * 300, 0.1, 'sawtooth');
+                    }, i * 50);
+                }
+            };
+        }
+        
         function startGame(mode) {
             game.gameMode = mode;
             game.gameStarted = true;
@@ -165,6 +232,11 @@
             if (mode === 'ai') {
                 document.getElementById('gameInstructions').textContent = 'Player 1: W/S キー | Player 2: AI';
             }
+            
+            initAudio();
+            setTimeout(() => {
+                if (game.audio.bgm) game.audio.bgm();
+            }, 100);
             
             gameLoop();
         }
@@ -213,6 +285,7 @@
                 game.ball.y + game.ball.height >= game.player1.y) {
                 game.ball.speedX = -game.ball.speedX;
                 game.ball.x = game.player1.x + game.player1.width;
+                if (game.audio.hitSound) game.audio.hitSound();
             }
             
             if (game.ball.x + game.ball.width >= game.player2.x &&
@@ -221,15 +294,18 @@
                 game.ball.y + game.ball.height >= game.player2.y) {
                 game.ball.speedX = -game.ball.speedX;
                 game.ball.x = game.player2.x - game.ball.width;
+                if (game.audio.hitSound) game.audio.hitSound();
             }
             
             if (game.ball.x < 0) {
                 game.player2.score++;
+                if (game.audio.scoreSound) game.audio.scoreSound();
                 resetBall();
             }
             
             if (game.ball.x > canvas.width) {
                 game.player1.score++;
+                if (game.audio.scoreSound) game.audio.scoreSound();
                 resetBall();
             }
         }
@@ -243,6 +319,10 @@
             game.fireball.active = Math.random() < 0.3;
             game.fireball.timer = 0;
             game.fireball.particles = [];
+            
+            if (game.fireball.active && game.audio.fireballSound) {
+                game.audio.fireballSound();
+            }
         }
         
         function updateFireball() {
