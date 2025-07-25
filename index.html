@@ -52,14 +52,59 @@
             text-align: center;
             font-size: 14px;
         }
+        
+        .menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            color: white;
+        }
+        
+        .menu h1 {
+            margin-bottom: 30px;
+            font-size: 32px;
+        }
+        
+        .menu button {
+            display: block;
+            width: 200px;
+            padding: 15px;
+            margin: 10px auto;
+            font-size: 18px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .menu button:hover {
+            background: #2980b9;
+        }
+        
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
-    <div class="game-container">
+    <div class="menu" id="gameMenu">
+        <h1>テニスゲーム</h1>
+        <button type="button" onclick="startGame('ai')">1人プレイ (vs AI)</button>
+        <button type="button" onclick="startGame('human')">2人プレイ</button>
+    </div>
+    
+    <div class="game-container hidden" id="gameContainer">
         <canvas id="gameCanvas" width="800" height="400"></canvas>
         <div class="score left" id="player1Score">0</div>
         <div class="score right" id="player2Score">0</div>
-        <div class="instructions">
+        <div class="instructions" id="gameInstructions">
             Player 1: W/S キー | Player 2: ↑/↓ キー
         </div>
     </div>
@@ -90,10 +135,17 @@
                 y: canvas.height / 2,
                 width: 15,
                 height: 15,
-                speedX: 3,
-                speedY: 2
+                speedX: 6,
+                speedY: 4
             },
-            keys: {}
+            keys: {},
+            gameMode: 'human',
+            gameStarted: false,
+            fireball: {
+                active: false,
+                timer: 0,
+                particles: []
+            }
         };
         
         document.addEventListener('keydown', (e) => {
@@ -104,6 +156,19 @@
             game.keys[e.key] = false;
         });
         
+        function startGame(mode) {
+            game.gameMode = mode;
+            game.gameStarted = true;
+            document.getElementById('gameMenu').classList.add('hidden');
+            document.getElementById('gameContainer').classList.remove('hidden');
+            
+            if (mode === 'ai') {
+                document.getElementById('gameInstructions').textContent = 'Player 1: W/S キー | Player 2: AI';
+            }
+            
+            gameLoop();
+        }
+        
         function updatePaddles() {
             if (game.keys['w'] && game.player1.y > 0) {
                 game.player1.y -= game.player1.speed;
@@ -112,11 +177,25 @@
                 game.player1.y += game.player1.speed;
             }
             
-            if (game.keys['ArrowUp'] && game.player2.y > 0) {
-                game.player2.y -= game.player2.speed;
-            }
-            if (game.keys['ArrowDown'] && game.player2.y < canvas.height - game.player2.height) {
-                game.player2.y += game.player2.speed;
+            if (game.gameMode === 'human') {
+                if (game.keys['ArrowUp'] && game.player2.y > 0) {
+                    game.player2.y -= game.player2.speed;
+                }
+                if (game.keys['ArrowDown'] && game.player2.y < canvas.height - game.player2.height) {
+                    game.player2.y += game.player2.speed;
+                }
+            } else {
+                const ballCenterY = game.ball.y + game.ball.height / 2;
+                const paddleCenterY = game.player2.y + game.player2.height / 2;
+                const diff = ballCenterY - paddleCenterY;
+                
+                if (Math.abs(diff) > 5) {
+                    if (diff > 0 && game.player2.y < canvas.height - game.player2.height) {
+                        game.player2.y += game.player2.speed * 0.8;
+                    } else if (diff < 0 && game.player2.y > 0) {
+                        game.player2.y -= game.player2.speed * 0.8;
+                    }
+                }
             }
         }
         
@@ -159,7 +238,38 @@
             game.ball.x = canvas.width / 2;
             game.ball.y = canvas.height / 2;
             game.ball.speedX = -game.ball.speedX;
-            game.ball.speedY = Math.random() > 0.5 ? 2 : -2;
+            game.ball.speedY = Math.random() > 0.5 ? 4 : -4;
+            
+            game.fireball.active = Math.random() < 0.3;
+            game.fireball.timer = 0;
+            game.fireball.particles = [];
+        }
+        
+        function updateFireball() {
+            if (game.fireball.active) {
+                game.fireball.timer++;
+                
+                for (let i = 0; i < 3; i++) {
+                    game.fireball.particles.push({
+                        x: game.ball.x + Math.random() * game.ball.width,
+                        y: game.ball.y + Math.random() * game.ball.height,
+                        vx: (Math.random() - 0.5) * 4,
+                        vy: (Math.random() - 0.5) * 4,
+                        life: 20
+                    });
+                }
+                
+                game.fireball.particles = game.fireball.particles.filter(p => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life--;
+                    return p.life > 0;
+                });
+                
+                if (game.fireball.timer > 300) {
+                    game.fireball.active = false;
+                }
+            }
         }
         
         function draw() {
@@ -169,6 +279,25 @@
             
             ctx.fillRect(game.player1.x, game.player1.y, game.player1.width, game.player1.height);
             ctx.fillRect(game.player2.x, game.player2.y, game.player2.width, game.player2.height);
+            
+            if (game.fireball.active) {
+                const gradient = ctx.createRadialGradient(
+                    game.ball.x + game.ball.width/2, game.ball.y + game.ball.height/2, 0,
+                    game.ball.x + game.ball.width/2, game.ball.y + game.ball.height/2, game.ball.width
+                );
+                gradient.addColorStop(0, '#ff4444');
+                gradient.addColorStop(0.5, '#ff8800');
+                gradient.addColorStop(1, '#ffaa00');
+                ctx.fillStyle = gradient;
+                
+                game.fireball.particles.forEach(p => {
+                    ctx.globalAlpha = p.life / 20;
+                    ctx.fillRect(p.x, p.y, 3, 3);
+                });
+                ctx.globalAlpha = 1;
+            } else {
+                ctx.fillStyle = 'white';
+            }
             
             ctx.fillRect(game.ball.x, game.ball.y, game.ball.width, game.ball.height);
             
@@ -184,13 +313,14 @@
         }
         
         function gameLoop() {
+            if (!game.gameStarted) return;
+            
             updatePaddles();
             updateBall();
+            updateFireball();
             draw();
             requestAnimationFrame(gameLoop);
         }
-        
-        gameLoop();
     </script>
 </body>
 </html>
