@@ -96,8 +96,16 @@
 <body>
     <div class="menu" id="gameMenu">
         <h1>テニスゲーム</h1>
-        <button type="button" onclick="startGame('ai')">1人プレイ (vs AI)</button>
+        <button type="button" onclick="showDifficultyMenu()">1人プレイ (vs AI)</button>
         <button type="button" onclick="startGame('human')">2人プレイ</button>
+    </div>
+    
+    <div class="menu hidden" id="difficultyMenu">
+        <h1>難易度選択</h1>
+        <button type="button" onclick="startGame('ai', 'easy')">イージー</button>
+        <button type="button" onclick="startGame('ai', 'normal')">ノーマル</button>
+        <button type="button" onclick="startGame('ai', 'infinity')">インフィニティー</button>
+        <button type="button" onclick="showMainMenu()" style="background: #e74c3c;">戻る</button>
     </div>
     
     <div class="game-container hidden" id="gameContainer">
@@ -140,11 +148,16 @@
             },
             keys: {},
             gameMode: 'human',
+            difficulty: 'normal',
             gameStarted: false,
             fireball: {
                 active: false,
                 timer: 0,
                 particles: []
+            },
+            powerShot: {
+                active: false,
+                glowIntensity: 0
             },
             audio: {
                 bgm: null,
@@ -223,14 +236,31 @@
             };
         }
         
-        function startGame(mode) {
+        function showDifficultyMenu() {
+            document.getElementById('gameMenu').classList.add('hidden');
+            document.getElementById('difficultyMenu').classList.remove('hidden');
+        }
+        
+        function showMainMenu() {
+            document.getElementById('difficultyMenu').classList.add('hidden');
+            document.getElementById('gameMenu').classList.remove('hidden');
+        }
+        
+        function startGame(mode, difficulty = 'normal') {
             game.gameMode = mode;
+            game.difficulty = difficulty;
             game.gameStarted = true;
             document.getElementById('gameMenu').classList.add('hidden');
+            document.getElementById('difficultyMenu').classList.add('hidden');
             document.getElementById('gameContainer').classList.remove('hidden');
             
             if (mode === 'ai') {
-                document.getElementById('gameInstructions').textContent = 'Player 1: W/S キー | Player 2: AI';
+                const difficultyText = {
+                    'easy': 'イージー',
+                    'normal': 'ノーマル', 
+                    'infinity': 'インフィニティー'
+                };
+                document.getElementById('gameInstructions').textContent = `Player 1: W/S キー | Player 2: AI (${difficultyText[difficulty]})`;
             }
             
             initAudio();
@@ -261,11 +291,29 @@
                 const paddleCenterY = game.player2.y + game.player2.height / 2;
                 const diff = ballCenterY - paddleCenterY;
                 
-                if (Math.abs(diff) > 5) {
+                let aiSpeed = game.player2.speed;
+                let accuracy = 5;
+                
+                switch(game.difficulty) {
+                    case 'easy':
+                        aiSpeed *= 0.4;
+                        accuracy = 30;
+                        break;
+                    case 'normal':
+                        aiSpeed *= 0.7;
+                        accuracy = 15;
+                        break;
+                    case 'infinity':
+                        aiSpeed *= 1.2;
+                        accuracy = 2;
+                        break;
+                }
+                
+                if (Math.abs(diff) > accuracy) {
                     if (diff > 0 && game.player2.y < canvas.height - game.player2.height) {
-                        game.player2.y += game.player2.speed * 0.8;
+                        game.player2.y += aiSpeed;
                     } else if (diff < 0 && game.player2.y > 0) {
-                        game.player2.y -= game.player2.speed * 0.8;
+                        game.player2.y -= aiSpeed;
                     }
                 }
             }
@@ -294,6 +342,23 @@
                 game.ball.y + game.ball.height >= game.player2.y) {
                 game.ball.speedX = -game.ball.speedX;
                 game.ball.x = game.player2.x - game.ball.width;
+                
+                if (game.gameMode === 'ai' && game.difficulty === 'infinity') {
+                    const powerShot = Math.random() < 0.4;
+                    if (powerShot) {
+                        game.ball.speedX *= 1.8;
+                        game.ball.speedY *= 1.5;
+                        game.ball.speedY += (Math.random() - 0.5) * 6;
+                        
+                        if (game.audio.fireballSound) {
+                            setTimeout(() => game.audio.fireballSound(), 50);
+                        }
+                        
+                        game.fireball.active = true;
+                        game.fireball.timer = 0;
+                    }
+                }
+                
                 if (game.audio.hitSound) game.audio.hitSound();
             }
             
@@ -329,13 +394,14 @@
             if (game.fireball.active) {
                 game.fireball.timer++;
                 
-                for (let i = 0; i < 3; i++) {
+                const particleCount = Math.abs(game.ball.speedX) > 8 ? 6 : 3;
+                for (let i = 0; i < particleCount; i++) {
                     game.fireball.particles.push({
                         x: game.ball.x + Math.random() * game.ball.width,
                         y: game.ball.y + Math.random() * game.ball.height,
-                        vx: (Math.random() - 0.5) * 4,
-                        vy: (Math.random() - 0.5) * 4,
-                        life: 20
+                        vx: (Math.random() - 0.5) * 6,
+                        vy: (Math.random() - 0.5) * 6,
+                        life: 25
                     });
                 }
                 
@@ -346,7 +412,7 @@
                     return p.life > 0;
                 });
                 
-                if (game.fireball.timer > 300) {
+                if (game.fireball.timer > 300 || Math.abs(game.ball.speedX) < 7) {
                     game.fireball.active = false;
                 }
             }
@@ -361,18 +427,28 @@
             ctx.fillRect(game.player2.x, game.player2.y, game.player2.width, game.player2.height);
             
             if (game.fireball.active) {
+                const intensity = Math.abs(game.ball.speedX) > 8 ? 1.5 : 1;
                 const gradient = ctx.createRadialGradient(
                     game.ball.x + game.ball.width/2, game.ball.y + game.ball.height/2, 0,
-                    game.ball.x + game.ball.width/2, game.ball.y + game.ball.height/2, game.ball.width
+                    game.ball.x + game.ball.width/2, game.ball.y + game.ball.height/2, game.ball.width * intensity
                 );
-                gradient.addColorStop(0, '#ff4444');
-                gradient.addColorStop(0.5, '#ff8800');
-                gradient.addColorStop(1, '#ffaa00');
+                
+                if (Math.abs(game.ball.speedX) > 8) {
+                    gradient.addColorStop(0, '#ffffff');
+                    gradient.addColorStop(0.3, '#ff2222');
+                    gradient.addColorStop(0.7, '#ff8800');
+                    gradient.addColorStop(1, '#ffaa00');
+                } else {
+                    gradient.addColorStop(0, '#ff4444');
+                    gradient.addColorStop(0.5, '#ff8800');
+                    gradient.addColorStop(1, '#ffaa00');
+                }
                 ctx.fillStyle = gradient;
                 
                 game.fireball.particles.forEach(p => {
-                    ctx.globalAlpha = p.life / 20;
-                    ctx.fillRect(p.x, p.y, 3, 3);
+                    ctx.globalAlpha = p.life / 25;
+                    const size = Math.abs(game.ball.speedX) > 8 ? 5 : 3;
+                    ctx.fillRect(p.x, p.y, size, size);
                 });
                 ctx.globalAlpha = 1;
             } else {
